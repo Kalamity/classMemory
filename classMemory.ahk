@@ -1,4 +1,6 @@
 ﻿/*
+    01/02/17 
+        - Calling __New() and passing an 'ahk_pid' windowTitle will now work with console apps (which don't have windows).
     05/07/16 - version 2.6
         - When possible, the more reliable getModuleBaseAddress() method is used to set the object.BaseAddress property.
     30/03/16 - version 2.5
@@ -254,6 +256,7 @@ class _ClassMemory
                 ,   "PROCESS_VM_READ": 0x0010
                 ,   "PROCESS_VM_WRITE": 0x0020}
 
+
     ; Method:    __new(program, dwDesiredAccess := "", byRef handle := "", windowMatchMode := 3)
     ; Example:  derivedObject := new _ClassMemory("ahk_exe calc.exe")
     ;           This is the first method which should be called when trying to access a program's memory. 
@@ -265,6 +268,7 @@ class _ClassMemory
     ;                       ahk_exe, ahk_class, ahk_pid, or simply the window title. e.g. "ahk_exe calc.exe" or "Calculator".
     ;                       It's safer not to use the window title, as some things can have the same window title e.g. an open folder called "Starcraft II"
     ;                       would have the same window title as the game itself.
+    ;                       *Use ahk_pid for console apps which do not have an associated window*
     ;   dwDesiredAccess     The access rights requested when opening the process.
     ;                       If this parameter is null the process will be opened with the following rights
     ;                       PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE
@@ -283,7 +287,7 @@ class _ClassMemory
 
 
     __new(program, dwDesiredAccess := "", byRef handle := "", windowMatchMode := 3)
-    {
+    {         
         if this.PID := handle := this.findPID(program, windowMatchMode) ; set handle to 0 if program not found
         {
             ; This default access level is sufficient to read and write memory addresses, and to perform pattern scans.
@@ -327,6 +331,10 @@ class _ClassMemory
 
     findPID(program, windowMatchMode := "3")
     {
+        ; If user passes an AHK_PID, don't bother searching. There are some very rare cases where searching windows for PIDs 
+        ; wont work - console apps
+        if RegExMatch(program, "Ai)\s*AHK_PID\s+(0x[[:xdigit:]]+|\d+)", pid)
+            return pid1
         if windowMatchMode
         {
             ; This is a string and will not contain the 0x prefix
@@ -616,10 +624,12 @@ class _ClassMemory
 
 
     ; Method:   getProcessBaseAddress(WindowTitle, windowMatchMode := 3)
-    ;           Returns the base address of a process. In most cases this will provide the same result calling getModuleBaseAddress() (when passing 
+    ;           Returns the base address of a process. In most cases this will provide the same result as calling getModuleBaseAddress() (when passing 
     ;           a null value as the module parameter), however getProcessBaseAddress() will usually work regardless of the bitness
     ;           of both the AHK exe and the target process.
-    ;           ***If this returns an incorrect value, try using (the more reliable) getModuleBaseAddress() instead.***
+    ;           *This method relies on the target process having a window and will not work for console apps*
+    ;           *'DetectHiddenWindows, On' is required for hidden windows*
+    ;           ***If this returns an incorrect value, try using (the MORE RELIABLE) getModuleBaseAddress() instead.***
     ; Parameters:
     ;   windowTitle         This can be any AHK windowTitle identifier, such as 
     ;                       ahk_exe, ahk_class, ahk_pid, or simply the window title. e.g. "ahk_exe calc.exe" or "Calculator".
@@ -662,38 +672,61 @@ class _ClassMemory
 
     ; Method:            getModuleBaseAddress(module := "", byRef aModuleInfo := "")
     ; Parameters:
-    ;   module -        The file name of the module/dll to find e.g. "calc.exe", "GDI32.dll", "Bass.dll" etc
+    ;   moduleName -    The file name of the module/dll to find e.g. "calc.exe", "GDI32.dll", "Bass.dll" etc
     ;                   If no module (null) is specified, the address of the base module - main()/process will be returned 
     ;                   e.g. for calc.exe the following two method calls are equivalent getModuleBaseAddress() and getModuleBaseAddress("calc.exe")
-    ;   aModuleInfo -   (Optional) A module Info object is returned in this variable. 
-    ;                   This object contains the keys: lpBaseOfDll, SizeOfImage, and EntryPoint 
+    ;   aModuleInfo -   (Optional) A module Info object is returned in this variable. If method fails this variable is made blank.
+    ;                   This object contains the keys: name, fileName, lpBaseOfDll, SizeOfImage, and EntryPoint 
     ; Return Values: 
     ;   Positive integer - The module's base/load address (success).
     ;   -1 - Module not found
     ;   -3 - EnumProcessModulesEx failed
     ;   -4 - The AHK script is 32 bit and you are trying to access the modules of a 64 bit target process. Or the target process has been closed.
-    ;   -5 - GetModuleInformation failed.
     ; Notes:    A 64 bit AHK can enumerate the modules of a target 64 or 32 bit process.
     ;           A 32 bit AHK can only enumerate the modules of a 32 bit process
     ;           This method requires PROCESS_QUERY_INFORMATION + PROCESS_VM_READ access rights. These are included by default with this class.
 
-    getModuleBaseAddress(module := "", byRef aModuleInfo := "")
+    getModuleBaseAddress(moduleName := "", byRef aModuleInfo := "")
     {
-        if (A_PtrSize = 4 && this.IsTarget64bit)
-            return -4 ; AHK is 32bit and target process is 64 bit, this function wont work
-        if (module = "")
-            mainExeFullPath := this.GetModuleFileNameEx() ; mainExeName = main executable module of the process (will include full directory path)
-        if !moduleCount := this.EnumProcessModulesEx(lphModule)
-            return -3     
-        loop % moduleCount
+        aModuleInfo := ""
+        if (moduleName = "")
+            moduleName := this.GetModuleFileNameEx(0, True) ; main executable module of the process - get just fileName no path
+        if r := this.getModules(aModules, True) < 0
+            return r ; -4, -3
+        return aModules.HasKey(moduleName) ? (aModules[moduleName].lpBaseOfDll, aModuleInfo := aModules[moduleName]) : -1
+        ; no longer returns -5 for failed to get module info
+    }  
+     
+
+    ; Method:                   getModuleFromAddress(address, byRef aModuleInfo) 
+    ;                           Finds the module in which the address resides. 
+    ; Parameters:
+    ;   address                 The address of interest.
+    ;                       
+    ;   aModuleInfo             (Optional) An unquoted variable name. If the module associated with the address is found,
+    ;                           a moduleInfo object will be stored in this variable. This object has the 
+    ;                           following keys: name, fileName, lpBaseOfDll, SizeOfImage, and EntryPoint. 
+    ;                           If the address is not found to reside inside a module, the passed variable is
+    ;                           made blank/null.
+    ;   offsetFromModuleBase    (Optional) Stores the relative offset from the module base address 
+    ;                           to the specified address. If the method fails then the passed variable is set to blank/empty.
+    ; Return Values:
+    ;   1                       Success - The address is contained within a module.
+    ;   -1                      The specified address does not reside within a loaded module.
+    ;   -3                      EnumProcessModulesEx failed.
+    ;   -4                      The AHK script is 32 bit and you are trying to access the modules of a 64 bit target process.      
+
+    getModuleFromAddress(address, byRef aModuleInfo, byRef offsetFromModuleBase := "") 
+    {
+        aModuleInfo := offsetFromModule := ""
+        if result := this.getmodules(aModules) < 0
+            return result ; error -3, -4
+        for k, module in aModules 
         {
-            ; module will contain directory path as well e.g C:\Windows\syswow65\GDI32.dll
-            moduleFullPath := this.GetModuleFileNameEx(hModule := numget(lphModule, (A_index - 1) * A_PtrSize))
-            SplitPath, moduleFullPath, fileName ; strips the path so = GDI32.dll
-            if (module = "" && mainExeFullPath = moduleFullPath) || (module != "" && module = filename)
-                return this.GetModuleInformation(hModule, aModuleInfo) ? aModuleInfo.lpBaseOfDll : -5 ; Failed to get module info
-        }
-        return -1 ; not found
+            if (address >= module.lpBaseOfDll && address < module.lpBaseOfDll + module.SizeOfImage)
+                return 1, aModuleInfo := module, offsetFromModuleBase := address - module.lpBaseOfDll
+        }    
+        return -1    
     }
 
     ; SeDebugPrivileges is required to read/write memory in some programs.
@@ -781,10 +814,10 @@ class _ClassMemory
     } 
 
     ; Method:               getModules(byRef aModules, useFileNameAsKey := False)
-    ;                       Stores the process's loaded modules as an array of object modules in the aModules parameter.
+    ;                       Stores the process's loaded modules as an array of (object) modules in the aModules parameter.
     ; Parameters:
     ;   aModules            An unquoted variable name. The loaded modules of the process are stored in this variable as an array of objects.
-    ;                       Each object in this array has the following keys: Name, lpBaseOfDll, SizeOfImage, and EntryPoint. 
+    ;                       Each object in this array has the following keys: name, fileName, lpBaseOfDll, SizeOfImage, and EntryPoint. 
     ;   useFileNameAsKey    When true, the file name e.g. GDI32.dll is used as the lookup key for each module object.
     ; Return Values:
     ;   Positive integer    The size of the aModules array. (Success)
@@ -802,7 +835,7 @@ class _ClassMemory
         {
             this.GetModuleInformation(hModule := numget(lphModule, (A_index - 1) * A_PtrSize), aModuleInfo)
             aModuleInfo.Name := this.GetModuleFileNameEx(hModule)
-            filePath := aModuleInfo.Name
+            filePath := aModuleInfo.name
             SplitPath, filePath, fileName
             aModuleInfo.fileName := fileName
             if useFileNameAsKey
@@ -811,6 +844,8 @@ class _ClassMemory
         }
         return moduleCount        
     }
+
+
 
     getEndAddressOfLastModule(byRef aModuleInfo := "")
     {
@@ -828,7 +863,7 @@ class _ClassMemory
     ; but the file name is truncated and null-terminated.
     ; If the buffer is adequate the string is still null terminated. 
 
-    GetModuleFileNameEx(hModule := 0)
+    GetModuleFileNameEx(hModule := 0, fileNameNoPath := False)
     {
         ; ANSI MAX_PATH = 260 (includes null) - unicode can be ~32K.... but no one would ever have one that size
         ; So just give it a massive size and don't bother checking. Most coders just give it MAX_PATH size anyway
@@ -838,6 +873,9 @@ class _ClassMemory
                     , "Ptr", hModule
                     , "Str", lpFilename
                     , "Uint", 2048 / (A_IsUnicode ? 2 : 1))
+        if fileNameNoPath
+            SplitPath, lpFilename, lpFilename ; strips the path so = GDI32.dll
+
         return lpFilename
     }
 
@@ -952,6 +990,7 @@ class _ClassMemory
     ;
     ;   Examples:
     ;                   pattern := stringToPattern("This text exists somewhere in the target program!")
+    ;                   memObject.processPatternScan(,, pattern*)   ; Note the '*'
 
     stringToPattern(string, encoding := "UTF-8", insertNullTerminator := False)
     {   
@@ -1346,10 +1385,6 @@ class _ClassMemory
 
 
 
-
-
-
-
 /*
 32bit
 Size: 28
@@ -1375,47 +1410,4 @@ Protect             36  |4
 Type                40  |4
 __alignment2        44  |4
 
-
-/*
-
-    ;Doesn't WORK with AHK 64 BIT, only works with AHK 32 bit
-    ;taken from:
-    ;http://www.autohotkey.com/board/topic/23627-machine-code-binary-buffer-searching-regardless-of-null/
-    ; -1 not found else returns offset address (starting at 0)
-    scanInBuf(haystackAddr, needleAddr, haystackSize, needleSize, StartOffset = 0)
-    {  static fun
-
-        ; AHK32Bit a_PtrSize = 4 | AHK64Bit - 8 bytes
-        if (a_PtrSize = 8)
-          return -1
-
-        ifequal, fun,
-        {
-          h =
-          (  LTrim join
-             5589E583EC0C53515256579C8B5D1483FB000F8EC20000008B4D108B451829C129D9410F8E
-             B10000008B7D0801C78B750C31C0FCAC4B742A4B742D4B74364B74144B753F93AD93F2AE0F
-             858B000000391F75F4EB754EADF2AE757F3947FF75F7EB68F2AE7574EB628A26F2AE756C38
-             2775F8EB569366AD93F2AE755E66391F75F7EB474E43AD8975FC89DAC1EB02895DF483E203
-             8955F887DF87D187FB87CAF2AE75373947FF75F789FB89CA83C7038B75FC8B4DF485C97404
-             F3A775DE8B4DF885C97404F3A675D389DF4F89F82B45089D5F5E5A595BC9C2140031C0F7D0
-             EBF0
-          )
-          varSetCapacity(fun, strLen(h)//2)
-          loop % strLen(h)//2
-             numPut("0x" . subStr(h, 2*a_index-1, 2), fun, a_index-1, "char")
-        }
-
-        return DllCall(&fun, "uInt", haystackAddr, "uInt", needleAddr
-                      , "uInt", haystackSize, "uInt", needleSize, "uInt", StartOffset)
-    }
-
-
-
-
-
-    
-
-}
-http://www.autohotkey.com/board/topic/73813-which-uint-needs-to-be-ptr-for-64bit-scripts/
 */
