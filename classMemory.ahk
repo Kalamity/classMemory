@@ -1,4 +1,7 @@
 ﻿/*
+    18/07/17 - version 2.7
+        -   Added numberOfBytesRead() and numberOfBytesWritten() methods.
+            These return the number of bytes read or written by the last ReadProcessMemory()/WriteProcessMemory() operation.
     01/02/17 
         - Calling __New() and passing an 'ahk_pid' windowTitle will now work with console apps (which don't have windows).
     05/07/16 - version 2.6
@@ -123,6 +126,8 @@
         getModuleBaseAddress()
 
     Less commonly used methods:
+        numberOfBytesRead()
+        numberOfBytesWritten()
         hexStringToPattern()
         stringToPattern()    
         modulePatternScan()
@@ -154,11 +159,14 @@
 
         ; The contents of this file can be copied directly into your script. Alternately, you can copy the classMemory.ahk file into your library folder,
         ; in which case you will need to use the #include directive in your script i.e. 
-        #Include <classMemory>
+            #Include <classMemory>
         
         ; You can use this code to check if you have installed the class correctly.
-        if (_ClassMemory.__Class != "_ClassMemory")
-            msgbox class memory not correctly installed. Or the (global class) variable "_ClassMemory" has been overwritten
+            if (_ClassMemory.__Class != "_ClassMemory")
+            {
+                msgbox class memory not correctly installed. Or the (global class) variable "_ClassMemory" has been overwritten
+                ExitApp
+            }
 
         ; Open a process with sufficient access to read and write memory addresses (this is required before you can use the other functions)
         ; You only need to do this once. But if the process closes/restarts, then you will need to perform this step again. Refer to the notes section below.
@@ -296,6 +304,9 @@ class _ClassMemory
                 dwDesiredAccess := this.aRights.PROCESS_QUERY_INFORMATION | this.aRights.PROCESS_VM_OPERATION | this.aRights.PROCESS_VM_READ | this.aRights.PROCESS_VM_WRITE 
             if this.hProcess := handle := this.OpenProcess(this.PID, dwDesiredAccess) ; NULL/Blank if failed to open process for some reason
             {
+                this.pNumberOfBytesRead := DllCall("GlobalAlloc", "UInt", 0x0040, "Ptr", A_PtrSize, "Ptr") ; 0x0040 initialise to 0
+                this.pNumberOfBytesWritten := DllCall("GlobalAlloc", "UInt", 0x0040, "Ptr", A_PtrSize, "Ptr") ; initialise to 0
+
                 this.readStringLastError := False
                 this.currentProgram := program
                 if this.isTarget64bit := this.isTargetProcess64Bit(this.PID, this.hProcess, dwDesiredAccess)
@@ -321,12 +332,16 @@ class _ClassMemory
     __delete()
     {
         this.closeHandle(this.hProcess)
+        if this.pNumberOfBytesRead
+            DllCall("GlobalFree", "Ptr", this.pNumberOfBytesRead)
+        if this.pNumberOfBytesWritten
+            DllCall("GlobalFree", "Ptr", this.pNumberOfBytesWritten)
         return
     }
 
     version()
     {
-        return 2.6
+        return 2.7
     }   
 
     findPID(program, windowMatchMode := "3")
@@ -381,6 +396,23 @@ class _ClassMemory
         return DllCall("CloseHandle", "Ptr", hProcess)
     }
 
+    ; Methods:      numberOfBytesRead() / numberOfBytesWritten()
+    ;               Returns the number of bytes read or written by the last ReadProcessMemory or WriteProcessMemory operation. 
+    ;             
+    ; Return Values: 
+    ;   zero or positive value      Number of bytes read/written
+    ;   -1                          Failure. Shouldn't  occur 
+
+    numberOfBytesRead()
+    {
+        return !this.pNumberOfBytesRead ? -1 : NumGet(this.pNumberOfBytesRead+0, "Ptr")
+    }
+    numberOfBytesWritten()
+    {
+        return !this.pNumberOfBytesWritten ? -1 : NumGet(this.pNumberOfBytesWritten+0, "Ptr")
+    }
+
+
     ; Method:   read(address, type := "UInt", aOffsets*)
     ;           Reads various integer type values
     ; Parameters:
@@ -406,7 +438,7 @@ class _ClassMemory
         ; so set errorlevel to invalid parameter for DLLCall() i.e. -2
         if !this.aTypeSize.hasKey(type)
             return "", ErrorLevel := -2 
-        if DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, type "*", result, "Ptr", this.aTypeSize[type], "Ptr",0)
+        if DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, type "*", result, "Ptr", this.aTypeSize[type], "Ptr", this.pNumberOfBytesRead)
             return result
         return        
     }
@@ -435,7 +467,7 @@ class _ClassMemory
     readRaw(address, byRef buffer, bytes := 4, aOffsets*)
     {
         VarSetCapacity(buffer, bytes)
-        return DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", &buffer, "Ptr", bytes, "Ptr", 0)
+        return DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", &buffer, "Ptr", bytes, "Ptr", this.pNumberOfBytesRead)
     }
 
     ; Method:   readString(address, sizeBytes := 0, encoding := "utf-8", aOffsets*)
@@ -479,7 +511,7 @@ class _ClassMemory
             else encodingSize := 1, charType := "Char", loopCount := 4
             Loop
             {   ; Lets save a few reads by reading in 4 byte chunks
-                if !DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", address + ((outterIndex := A_index) - 1) * 4, "Ptr", &buffer, "Ptr", 4, "Ptr", 0) || ErrorLevel
+                if !DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", address + ((outterIndex := A_index) - 1) * 4, "Ptr", &buffer, "Ptr", 4, "Ptr", this.pNumberOfBytesRead) || ErrorLevel
                     return "", this.ReadStringLastError := True 
                 else loop, %loopCount%
                 {
@@ -492,7 +524,7 @@ class _ClassMemory
                 } 
             }
         }
-        if DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", address, "Ptr", &buffer, "Ptr", sizeBytes, "Ptr", 0)   
+        if DllCall("ReadProcessMemory", "Ptr", this.hProcess, "Ptr", address, "Ptr", &buffer, "Ptr", sizeBytes, "Ptr", this.pNumberOfBytesRead)   
             return StrGet(&buffer,, encoding)  
         return "", this.ReadStringLastError := True             
     }
@@ -521,7 +553,7 @@ class _ClassMemory
         requiredSize := StrPut(string, encoding) * encodingSize - (this.insertNullTerminator ? 0 : encodingSize)
         VarSetCapacity(buffer, requiredSize)
         StrPut(string, &buffer, StrLen(string) + (this.insertNullTerminator ?  1 : 0), encoding)
-        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", &buffer, "Ptr", requiredSize, "Ptr", 0)
+        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", &buffer, "Ptr", requiredSize, "Ptr", this.pNumberOfBytesWritten)
     }
     
     ; Method:   write(address, value, type := "Uint", aOffsets*)
@@ -544,7 +576,7 @@ class _ClassMemory
     {
         if !this.aTypeSize.hasKey(type)
             return "", ErrorLevel := -2 
-        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, type "*", value, "Ptr", this.aTypeSize[type], "Ptr", 0) 
+        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, type "*", value, "Ptr", this.aTypeSize[type], "Ptr", this.pNumberOfBytesWritten) 
     }
 
     ; Method:   writeRaw(address, byRef buffer, byRef bufferSize := 0, aOffsets*)
@@ -563,7 +595,7 @@ class _ClassMemory
 
     writeRaw(address, pBuffer, sizeBytes, aOffsets*)
     {
-        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", pBuffer, "Ptr", sizeBytes, "Ptr", 0) 
+        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", pBuffer, "Ptr", sizeBytes, "Ptr", this.pNumberOfBytesWritten) 
     }
 
     ; Method:           pointer(address, finalType := "UInt", offsets*)
