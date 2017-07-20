@@ -1,79 +1,7 @@
 ﻿/*
-    18/07/17 - version 2.7
-        -   Added numberOfBytesRead() and numberOfBytesWritten() methods.
-            These return the number of bytes read or written by the last ReadProcessMemory()/WriteProcessMemory() operation.
-    01/02/17 
-        - Calling __New() and passing an 'ahk_pid' windowTitle will now work with console apps (which don't have windows).
-    05/07/16 - version 2.6
-        - When possible, the more reliable getModuleBaseAddress() method is used to set the object.BaseAddress property.
-    30/03/16 - version 2.5
-        - Fixed a bug causing getModules() to return 0 when useFileNameAsKey was enabled.
-    20/01/16 - version 2.4
-        - Added two methods to help create array of byte patterns.
-            1. hexStringToPattern(hexString)
-            2. stringToPattern(string, encoding := "UTF-8", insertNullTerminator := False)
-    25/12/15 - version 2.3
-        - Virtual protect (MCode()) is now called for 32 bit scripts. Previously the function would fail when DEP was enabled for all applications.
-    5/12/15 - version 2.2
-        - Added the useFileNameAsKey option to getModules(). When enabled, the module's file name is used as the key to the module object i.e. an associative array.
-        - Added setSeDebugPrivilege() method.
-    10/10/15 - version 2.1
-        - Optimised the pointer() method.
-        - Corrected some DLLCall types (the previous types would still work fine)
-    06/08/15 - version 2.0
-        -   Fixed an issue with getProcessBaseAddress() on 32 bit OS systems.
-            The returned value was incorrect - however it would still work, as the lower 4 bytes were correct. 
-    07/05/15 - version 1.9
-        - Fixed an issue with processPatternScan() failing when the startAddress was not 0. 
-    17/12/14 - version 1.8
-        - Fixed a 'bitness' bug in _MEMORY_BASIC_INFORMATION 
-    12/12/14 - version 1.7
-        - Added an 'endAddress' parameter to processPatternScan.
-    10/11/14 - version 1.6
-        - Wild card bytes in the pattern scan functions can now be denoted by any non-numeric value e.g. "?", "wild" or "" (null)
-    17/10/14 - version 1.5
-        - Fixed a bug in writeString() which would cause the null terminator to be erroneously removed. 
-    23/09/14 - version 1.4
-        - The various read and write methods should now support pointers in 64 bit target applications providing AHK is also 64 bit.
-            -> When the new operator is used the target application's bitness is checked. If it 64 bit, pointers will then be read as Int64s.
-            -> A 32 bit AHK can read/write and use pointers in a 64 bit target application providing the addresses can fit inside a 4 byte ptr.
-               If the address is too large, only the lower 4 bytes are passed to ReadProcessMemory()/WriteProcessMemory() i.e. the wrong address is passed.
-        - readString() has been slightly optimised when reading null terminated strings of unknown size.
-        - New methods:  
-            - suspend(), resume(), and isTargetProcess64Bit()
-        - OpenProcess() has been modified and closeProcess() has been replaced by CloseHandle()
-            -> These two changes will not affect users unless your code calls them directly.
-        - Fixed a bug in _MEMORY_BASIC_INFORMATION
-        - Added 'aRights' object which contains various handle access constants.
-    19/09/14 - version 1.3
-        -   Renamed some methods.
-        -   Old name --> New name
-        -   getBaseAddressOfModule() --> getModuleBaseAddress()
-        -   ReadRawMemory() --> readRaw()
-        -   writeBuffer() --> writeRaw()
-    17/08/14
-        -   Change class name to _ClassMemory
-    1/08/14 - version 1.2
-        -   getProcessBaseAddress() dllcall now returns Int64. This prevents a negative number (overflow)
-            when reading the base address of a 64 bit target process from a 32 bit AHK process.
-        -   Added various pattern scan methods.
-    30/07/14 - version 1.1
-        -   EnumProcessModulesEx() is now used instead of EnumProcessModules().
-            This allows for getModuleBaseAddress() in a 64 bit AHK process to enumerate
-            (and find) the modules in a 32 bit target process.
-    12/07/14 - version 1.0
-        -   Added writeRaw() method
-        -   Added a version number to the class
-    10/06/14
-        -   Fixed a bug introduced by the above change, which prevented the function returning 
-            the base address of the process.
-    18/05/14
-        -   Fixed issue with get getModuleBaseAddress() returning the incorrect module 
-            when specified module name formed part of another modules name
+    A basic memory class by RHCP:
 
-    A basic memory class:
-
-    This is a basic wrapper for commonly used read and write memory functions.
+    This is a wrapper for commonly used read and write memory functions.
     It also contains a variety of pattern scan functions. 
     This class allows scripts to read/write integers and strings of various types. 
     Pointer addresses can easily be read/written by passing the base address and offsets to the various read/write functions.
@@ -81,6 +9,7 @@
     Process handles are kept open between reads. This increases speed.
     However, if a program closes/restarts then the process handle will become invalid
     and you will need to re-open another handle (blank/destroy the object and recreate it)
+    isHandleValid() can be used to check if a handle is still active/valid.
 
     read(), readString(), write(), and writeString() can be used to read and write memory addresses respectively.
 
@@ -101,14 +30,12 @@
         This was initially written for 32 bit target processes, however the various read/write functions
         should now completely support pointers in 64 bit target applications. The only caveat is that the AHK exe must also be 64 bit.  
         If AHK is 32 bit and the target application is 64 bit you can still read, write, and use pointers, so long as the addresses
-        can fit inside a 4 byte pointer. The pointer pBaseAddress parameter in ReadProcessMemory()/WriteProcessMemory() is the limiting factor here.
-        If AHK is 32 bit pBaseAddress will be a 4 byte pointer. This limits the maximum address which can be passed to the 32 bit range.
+        fit inside a 4 byte pointer, i.e. The maximum address is limited to the 32 bit range.
 
         The various pattern scan functions are intended to be used on 32 bit target applications, however: 
             - A 32 bit AHK script can perform pattern scans on a 32 bit target application.
             - A 32 bit AHK script may be able to perform pattern scans on a 64 bit process, providing the addresses fall within the 32 bit range.             
-            - A 64 bit AHK script should be able to perform pattern scans on a 32 bit target application without issue. 
-            - A 64 bit AHK script should be able to perform pattern scans on a 64 bit target application, however issues may arise at very high memory addresses as AHK does not support UInt64.
+            - A 64 bit AHK script should be able to perform pattern scans on a 32 or 64 bit target application without issue. 
 
         If the target process has admin privileges, then the AHK script will also require admin privileges. 
 
@@ -122,12 +49,11 @@
         write()
         writeString()
         writeRaw()
-        getProcessBaseAddress()
+        isHandleValid() 
         getModuleBaseAddress()
 
     Less commonly used methods:
-        numberOfBytesRead()
-        numberOfBytesWritten()
+        getProcessBaseAddress()
         hexStringToPattern()
         stringToPattern()    
         modulePatternScan()
@@ -135,6 +61,8 @@
         processPatternScan()
         rawPatternScan()
         getModules()
+        numberOfBytesRead()
+        numberOfBytesWritten()
         suspend()
         resume()
 
@@ -150,7 +78,19 @@
         patternScan()
         bufferScanForMaskedPattern()
         openProcess()
-        closeHandle()   
+        closeHandle() 
+
+    Useful properties:  (Do not modify the values of these properties - they are set automatically)
+        baseAddress             ; The base address of the target process
+        hProcess                ; The handle to the target process
+        PID                     ; The PID of the target process
+        currentProgram          ; The string the user used to identify the target process e.g. "ahk_exe calc.exe" 
+        isTarget64bit           ; True if target process is 64 bit, otherwise false
+        readStringLastError     ; Used to check for success/failure when reading a string
+
+     Useful editable properties:
+        insertNullTerminator    ; Determines if a null terminator is inserted when writing strings.
+               
 
     Usage:
 
@@ -235,6 +175,7 @@
         If the target process exits and then starts again (or restarts) you will need to free the derived object and then use the new operator to create a new object i.e. 
         calc := [] ; or calc := "" ; free the object. This is actually optional if using the line below, as the line below would free the previous derived object calc prior to initialising the new copy.
         calc := new _ClassMemory("ahk_exe calc.exe") ; Create a new derived object to read calc's memory.
+        isHandleValid() can be used to check if a target process has closed or restarted.
 */
 
 class _ClassMemory
@@ -262,7 +203,8 @@ class _ClassMemory
                 ,   "PROCESS_TERMINATE": 0x0001
                 ,   "PROCESS_VM_OPERATION": 0x0008
                 ,   "PROCESS_VM_READ": 0x0010
-                ,   "PROCESS_VM_WRITE": 0x0020}
+                ,   "PROCESS_VM_WRITE": 0x0020
+                ,   "SYNCHRONIZE": 0x00100000}
 
 
     ; Method:    __new(program, dwDesiredAccess := "", byRef handle := "", windowMatchMode := 3)
@@ -301,7 +243,9 @@ class _ClassMemory
             ; This default access level is sufficient to read and write memory addresses, and to perform pattern scans.
             ; if the program is run using admin privileges, then this script will also need admin privileges
             if dwDesiredAccess is not integer       
-                dwDesiredAccess := this.aRights.PROCESS_QUERY_INFORMATION | this.aRights.PROCESS_VM_OPERATION | this.aRights.PROCESS_VM_READ | this.aRights.PROCESS_VM_WRITE 
+                dwDesiredAccess := this.aRights.PROCESS_QUERY_INFORMATION | this.aRights.PROCESS_VM_OPERATION | this.aRights.PROCESS_VM_READ | this.aRights.PROCESS_VM_WRITE
+            dwDesiredAccess |= this.aRights.SYNCHRONIZE ; add SYNCHRONIZE to all handles to allow to check if application has closed
+
             if this.hProcess := handle := this.OpenProcess(this.PID, dwDesiredAccess) ; NULL/Blank if failed to open process for some reason
             {
                 this.pNumberOfBytesRead := DllCall("GlobalAlloc", "UInt", 0x0040, "Ptr", A_PtrSize, "Ptr") ; 0x0040 initialise to 0
@@ -341,7 +285,7 @@ class _ClassMemory
 
     version()
     {
-        return 2.7
+        return 2.8
     }   
 
     findPID(program, windowMatchMode := "3")
@@ -362,6 +306,29 @@ class _ClassMemory
         if windowMatchMode
             SetTitleMatchMode, %mode%    ; In case executed in autoexec
         return pid ? pid : 0 ; PID is null on fail, return 0
+    }
+    ; Method:   isHandleValid()
+    ;           This method provides a means to check if the internal process handle is still valid
+    ;           or in other words, the specific target application instance (which you have been reading from)
+    ;           has closed or restarted.
+    ;           For example, if the target application closes or restarts the handle will become invalid
+    ;           and subsequent calls to this method will return false.
+    ;
+    ; Return Values: 
+    ;   True    The handle is valid.
+    ;   False   The handle is not valid. 
+    ;
+    ; Notes: 
+    ;   This operation requires a handle with SYNCHRONIZE access rights.
+    ;   All handles, even user specified ones are opened with the SYNCHRONIZE access right.
+
+    isHandleValid()
+    {
+        return 0x102 = DllCall("WaitForSingleObject", "Ptr", this.hProcess, "UInt", 0)
+        ; WaitForSingleObject return values
+        ; -1 if called with null hProcess (sets lastError to 6 - invalid handle)
+        ; 258 / 0x102 WAIT_TIMEOUT - if handle is valid (process still running)
+        ; 0  WAIT_OBJECT_0 - if process has terminated        
     }
 
     ; Method:   openProcess(PID, dwDesiredAccess)
@@ -401,7 +368,7 @@ class _ClassMemory
     ;             
     ; Return Values: 
     ;   zero or positive value      Number of bytes read/written
-    ;   -1                          Failure. Shouldn't  occur 
+    ;   -1                          Failure. Shouldn't occur 
 
     numberOfBytesRead()
     {
@@ -649,10 +616,6 @@ class _ClassMemory
     ; Here are examples of such types: HANDLE, HWND, HMENU, HPALETTE, HBITMAP, etc. 
     ; http://www.viva64.com/en/k/0005/
 
-    ; The base address for some programs is dynamic. This can retrieve the current base address of the main module (e.g. calc.exe), 
-    ; which can then be added to your various offsets.  
-    ; This function will return the correct address regardless of the 
-    ; bitness (32 or 64 bit) of both the AHK exe and the target process.
 
 
     ; Method:   getProcessBaseAddress(WindowTitle, windowMatchMode := 3)
@@ -1110,10 +1073,15 @@ class _ClassMemory
     ; Method:       processPatternScan(aAOBPattern*)
     ;               Scan the memory space of the current process for an array of bytes pattern. 
     ;               To use this in a loop (scanning for multiple occurrences of the same pattern),
-    ;               simply call it again passing the last found address + 1
+    ;               simply call it again passing the last found address + 1 as the startAddress.
     ; Parameters:
     ;   startAddress -      The memory address from which to begin the search.
-    ;   endAddress -        The memory address at which the search ends. Defaults to 0x7FFFFFFF i.e. the maximum useful area for a 32 bit process
+    ;   endAddress -        The memory address at which the search ends. 
+    ;                       Defaults to 0x7FFFFFFF for 32 bit target processes.
+    ;                       Defaults to 0xFFFFFFFF for 64 bit target processes when the AHK script is 32 bit.
+    ;                       Defaults to 0x7FFFFFFFFFF for 64 bit target processes when the AHK script is 64 bit. 
+    ;                       0x7FFFFFFF and 0x7FFFFFFFFFF are the maximum process usable virtual address spaces for 32 and 64 bit applications.
+    ;                       Anything higher is used by the system (unless /LARGEADDRESSAWARE and 4GT have been modified).            
     ;                       Note: The entire pattern must be occur inside this range for a match to be found. The range is inclusive.
     ;   aAOBPattern* -      A variadic list of byte values i.e. the array of bytes to find.
     ;                       Wild card bytes should be indicated by passing a non-numeric value eg "?".
@@ -1124,9 +1092,12 @@ class _ClassMemory
     ;   -2                  Failed to read a memory region.
     ;   -10                 The aAOBPattern* is invalid. (No bytes were passed)
 
-    processPatternScan(startAddress := 0, endAddress := 0x7FFFFFFF, aAOBPattern*)
+    processPatternScan(startAddress := 0, endAddress := "", aAOBPattern*)
     {
         address := startAddress
+        if endAddress is not integer  
+            endAddress := this.isTarget64bit ? (A_PtrSize = 8 ? 0x7FFFFFFFFFF : 0xFFFFFFFF) : 0x7FFFFFFF
+
         MEM_COMMIT := 0x1000, MEM_MAPPED := 0x40000, MEM_PRIVATE := 0x20000
         PAGE_NOACCESS := 0x01, PAGE_GUARD := 0x100
         if !patternSize := this.getNeedleFromAOBPattern(patternMask, AOBBuffer, aAOBPattern*)
@@ -1214,27 +1185,7 @@ class _ClassMemory
                                                 , "Ptr") 
     }
 
-    ; Scans a specified memory region for a pattern
-    ; Has been replaced with a (much faster) machine code function
     /*
-    AHKPatternScan(startAddress, sizeOfRegionBytes, aAOBPattern*)
-    {
-        if aPattern.MaxIndex() > sizeOfRegionBytes
-            return -1
-        if !this.readRaw(startAddress, buffer, sizeOfRegionBytes)
-            return -2
-        while (i := A_Index - 1) <= sizeOfRegionBytes - aAOBPattern.MaxIndex() 
-        {
-            for j, value in aAOBPattern
-            {
-                if (value != "?" && value != Numget(buffer, i + j - 1, "UChar"))
-                    break
-                else if aAOBPattern.MaxIndex() = j 
-                    return startAddress + i
-            }
-        }
-        return 0
-    }
     // The c++ function used to generate the machine code
     int scan(unsigned char* haystack, unsigned int haystackSize, unsigned char* needle, unsigned int needleSize, char* patternMask, unsigned int startOffset)
     {
@@ -1339,7 +1290,7 @@ class _ClassMemory
     ; Another post on the net also agrees with my results. 
 
     ; Notes: 
-    ; A 64 bit AHK script can call this on a target 64 bit process. Issues may arise at very high memory addresses as AHK does not support UInt64.
+    ; A 64 bit AHK script can call this on a target 64 bit process. Issues may arise at extremely high memory addresses as AHK does not support UInt64 (but these addresses should never be used anyway).
     ; A 64 bit AHK can call this on a 32 bit target and it should work. 
     ; A 32 bit AHk script can call this on a 64 bit target and it should work providing the addresses fall inside the 32 bit range.
 

@@ -1,0 +1,77 @@
+20/07/17 - version 2.8
+        -   Added isHandleValid() method.
+            This method provides a means to check if the specific target application instance (which you have been reading from)
+            has closed or restarted.
+        -   The default value of the endAddress parameter in processPatternScan() has been modified.
+            If unspecified its value now depends on the bitness of the AHK script and target process. Refer to method description for details.
+    18/07/17 - version 2.7
+        -   Added numberOfBytesRead() and numberOfBytesWritten() methods.
+            These return the number of bytes read or written by the last ReadProcessMemory()/WriteProcessMemory() operation.
+    01/02/17 
+        - Calling __New() and passing an 'ahk_pid' windowTitle will now work with console apps (which don't have windows).
+    05/07/16 - version 2.6
+        - When possible, the more reliable getModuleBaseAddress() method is used to set the object.BaseAddress property.
+    30/03/16 - version 2.5
+        - Fixed a bug causing getModules() to return 0 when useFileNameAsKey was enabled.
+    20/01/16 - version 2.4
+        - Added two methods to help create array of byte patterns.
+            1. hexStringToPattern(hexString)
+            2. stringToPattern(string, encoding := "UTF-8", insertNullTerminator := False)
+    25/12/15 - version 2.3
+        - Virtual protect (MCode()) is now called for 32 bit scripts. Previously the function would fail when DEP was enabled for all applications.
+    5/12/15 - version 2.2
+        - Added the useFileNameAsKey option to getModules(). When enabled, the module's file name is used as the key to the module object i.e. an associative array.
+        - Added setSeDebugPrivilege() method.
+    10/10/15 - version 2.1
+        - Optimised the pointer() method.
+        - Corrected some DLLCall types (the previous types would still work fine)
+    06/08/15 - version 2.0
+        -   Fixed an issue with getProcessBaseAddress() on 32 bit OS systems.
+            The returned value was incorrect - however it would still work, as the lower 4 bytes were correct. 
+    07/05/15 - version 1.9
+        - Fixed an issue with processPatternScan() failing when the startAddress was not 0. 
+    17/12/14 - version 1.8
+        - Fixed a 'bitness' bug in _MEMORY_BASIC_INFORMATION 
+    12/12/14 - version 1.7
+        - Added an 'endAddress' parameter to processPatternScan.
+    10/11/14 - version 1.6
+        - Wild card bytes in the pattern scan functions can now be denoted by any non-numeric value e.g. "?", "wild" or "" (null)
+    17/10/14 - version 1.5
+        - Fixed a bug in writeString() which would cause the null terminator to be erroneously removed. 
+    23/09/14 - version 1.4
+        - The various read and write methods should now support pointers in 64 bit target applications providing AHK is also 64 bit.
+            -> When the new operator is used the target application's bitness is checked. If it 64 bit, pointers will then be read as Int64s.
+            -> A 32 bit AHK can read/write and use pointers in a 64 bit target application providing the addresses can fit inside a 4 byte ptr.
+               If the address is too large, only the lower 4 bytes are passed to ReadProcessMemory()/WriteProcessMemory() i.e. the wrong address is passed.
+        - readString() has been slightly optimised when reading null terminated strings of unknown size.
+        - New methods:  
+            - suspend(), resume(), and isTargetProcess64Bit()
+        - OpenProcess() has been modified and closeProcess() has been replaced by CloseHandle()
+            -> These two changes will not affect users unless your code calls them directly.
+        - Fixed a bug in _MEMORY_BASIC_INFORMATION
+        - Added 'aRights' object which contains various handle access constants.
+    19/09/14 - version 1.3
+        -   Renamed some methods.
+        -   Old name --> New name
+        -   getBaseAddressOfModule() --> getModuleBaseAddress()
+        -   ReadRawMemory() --> readRaw()
+        -   writeBuffer() --> writeRaw()
+    17/08/14
+        -   Change class name to _ClassMemory
+    1/08/14 - version 1.2
+        -   getProcessBaseAddress() dllcall now returns Int64. This prevents a negative number (overflow)
+            when reading the base address of a 64 bit target process from a 32 bit AHK process.
+        -   Added various pattern scan methods.
+    30/07/14 - version 1.1
+        -   EnumProcessModulesEx() is now used instead of EnumProcessModules().
+            This allows for getModuleBaseAddress() in a 64 bit AHK process to enumerate
+            (and find) the modules in a 32 bit target process.
+    12/07/14 - version 1.0
+        -   Added writeRaw() method
+        -   Added a version number to the class
+    10/06/14
+        -   Fixed a bug introduced by the above change, which prevented the function returning 
+            the base address of the process.
+    18/05/14
+        -   Fixed issue with get getModuleBaseAddress() returning the incorrect module 
+            when specified module name formed part of another modules name
