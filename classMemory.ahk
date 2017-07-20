@@ -221,7 +221,7 @@ class _ClassMemory
     ;                       *Use ahk_pid for console apps which do not have an associated window*
     ;   dwDesiredAccess     The access rights requested when opening the process.
     ;                       If this parameter is null the process will be opened with the following rights
-    ;                       PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE
+    ;                       PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE, & SYNCHRONIZE
     ;                       This access level is sufficient to allow all of the methods in this class to work.
     ;                       Specific process access rights are listed here http://msdn.microsoft.com/en-us/library/windows/desktop/ms684880(v=vs.85).aspx                           
     ;   handle (Output)     Optional variable in which a copy of the opened processes handle will be stored.
@@ -244,7 +244,7 @@ class _ClassMemory
             ; if the program is run using admin privileges, then this script will also need admin privileges
             if dwDesiredAccess is not integer       
                 dwDesiredAccess := this.aRights.PROCESS_QUERY_INFORMATION | this.aRights.PROCESS_VM_OPERATION | this.aRights.PROCESS_VM_READ | this.aRights.PROCESS_VM_WRITE
-            dwDesiredAccess |= this.aRights.SYNCHRONIZE ; add SYNCHRONIZE to all handles to allow to check if application has closed
+            dwDesiredAccess |= this.aRights.SYNCHRONIZE ; add SYNCHRONIZE to all handles to allow isHandleValid() to work
 
             if this.hProcess := handle := this.OpenProcess(this.PID, dwDesiredAccess) ; NULL/Blank if failed to open process for some reason
             {
