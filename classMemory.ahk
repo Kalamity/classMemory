@@ -57,8 +57,8 @@
         hexStringToPattern()
         stringToPattern()    
         modulePatternScan()
-        addressPatternScan()
         processPatternScan()
+        addressPatternScan()
         rawPatternScan()
         getModules()
         numberOfBytesRead()
@@ -123,7 +123,7 @@
                 if (hProcessCopy = 0)
                     msgbox The program isn't running (not found) or you passed an incorrect program identifier parameter. 
                 else if (hProcessCopy = "")
-                    msgbox OpenProcess failed. If the target process has admin rights, then the script also needs to be ran as admin. Consult A_LastError for more information.
+                    msgbox OpenProcess failed. If the target process has admin rights, then the script also needs to be ran as admin. _ClassMemory.setSeDebugPrivilege() may also be required. Consult A_LastError for more information.
                 ExitApp
             }
 
@@ -219,6 +219,7 @@ class _ClassMemory
     ;                       It's safer not to use the window title, as some things can have the same window title e.g. an open folder called "Starcraft II"
     ;                       would have the same window title as the game itself.
     ;                       *Use ahk_pid for console apps which do not have an associated window*
+    ;                       *'DetectHiddenWindows, On' is required for hidden windows*
     ;   dwDesiredAccess     The access rights requested when opening the process.
     ;                       If this parameter is null the process will be opened with the following rights
     ;                       PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE, & SYNCHRONIZE
@@ -226,7 +227,8 @@ class _ClassMemory
     ;                       Specific process access rights are listed here http://msdn.microsoft.com/en-us/library/windows/desktop/ms684880(v=vs.85).aspx                           
     ;   handle (Output)     Optional variable in which a copy of the opened processes handle will be stored.
     ;                       Values:
-    ;                           Null    OpenProcess failed. If the target process has admin rights, then the script also needs to be ran as admin. Consult A_LastError for more information.
+    ;                           Null    OpenProcess failed. The script may need to be run with admin rights admin, 
+    ;                                   and/or with the use of _ClassMemory.setSeDebugPrivilege(). Consult A_LastError for more information.
     ;                           0       The program isn't running (not found) or you passed an incorrect program identifier parameter. 
     ;                           Positive Integer    A handle to the process. (Success)
     ;   windowMatchMode -   Determines the matching mode used when finding the program (windowTitle).
@@ -285,7 +287,7 @@ class _ClassMemory
 
     version()
     {
-        return 2.8
+        return 2.9
     }   
 
     findPID(program, windowMatchMode := "3")
@@ -340,12 +342,15 @@ class _ClassMemory
     ;   dwDesiredAccess     The access rights requested when opening the process.
     ;                       Specific process access rights are listed here http://msdn.microsoft.com/en-us/library/windows/desktop/ms684880(v=vs.85).aspx                           
     ; Return Values: 
-    ;   Null/blank          OpenProcess failed. If the target process has admin rights, then the script also needs to be ran as admin.
+    ;   Null/blank          OpenProcess failed. If the target process has admin rights, then the script also needs to be ran as admin. 
+    ;                       _ClassMemory.setSeDebugPrivilege() may also be required.
     ;   Positive integer    A handle to the process.
 
     openProcess(PID, dwDesiredAccess)
     {
-        return DllCall("OpenProcess", "UInt", dwDesiredAccess, "Int", False, "UInt", PID, "Ptr") ; NULL/Blank if failed to open process for some reason
+        ; If fails with 0x5 ERROR_ACCESS_DENIED (when setSeDebugPrivilege() is req.), the func. returns 0 rather than null. Set it to null.
+        ; If fails for another reason, then it is usually null.
+        return (r := DllCall("OpenProcess", "UInt", dwDesiredAccess, "Int", False, "UInt", PID, "Ptr")) ? r : ""
     }   
 
     ; Method:   closeHandle(hProcess)
@@ -390,7 +395,7 @@ class _ClassMemory
     ;                   Note: Types must not contain spaces i.e. " UInt" or "UInt " will not work. 
     ;                   When an invalid type is passed the method returns NULL and sets ErrorLevel to -2
     ;       aOffsets* - A variadic list of offsets. When using offsets the address parameter should equal the base address of the pointer.
-    ;                   The address (bass address) and offsets should point to the memory address which holds the integer.  
+    ;                   The address (base address) and offsets should point to the memory address which holds the integer.  
     ; Return Values:
     ;       integer -   Indicates success.
     ;       Null    -   Indicates failure. Check ErrorLevel and A_LastError for more information.
@@ -422,7 +427,7 @@ class _ClassMemory
     ;                   do not exceed the bytes which have been read - as these remaining bytes could contain anything.
     ;       bytes   -   The number of bytes to be read.          
     ;       aOffsets* - A variadic list of offsets. When using offsets the address parameter should equal the base address of the pointer.
-    ;                   The address (bass address) and offsets should point to the memory address which is to be read
+    ;                   The address (base address) and offsets should point to the memory address which is to be read
     ; Return Values:
     ;       Non Zero -   Indicates success.
     ;       Zero     -   Indicates failure. Check errorLevel and A_LastError for more information
@@ -448,7 +453,7 @@ class _ClassMemory
     ;       encoding -  This refers to how the string is stored in the program's memory.
     ;                   UTF-8 and UTF-16 are common. Refer to the AHK manual for other encoding types.
     ;       aOffsets* - A variadic list of offsets. When using offsets the address parameter should equal the base address of the pointer.
-    ;                   The address (bass address) and offsets should point to the memory address which holds the string.                             
+    ;                   The address (base address) and offsets should point to the memory address which holds the string.                             
     ;                   
     ;  Return Values:
     ;       String -    On failure an empty (null) string is always returned. Since it's possible for the actual string 
@@ -505,7 +510,7 @@ class _ClassMemory
     ;       encoding -  This refers to how the string is to be stored in the program's memory.
     ;                   UTF-8 and UTF-16 are common. Refer to the AHK manual for other encoding types.
     ;       aOffsets* - A variadic list of offsets. When using offsets the address parameter should equal the base address of the pointer.
-    ;                   The address (bass address) and offsets should point to the memory address which is to be written to.
+    ;                   The address (base address) and offsets should point to the memory address which is to be written to.
     ; Return Values:
     ;       Non Zero -   Indicates success.
     ;       Zero     -   Indicates failure. Check errorLevel and A_LastError for more information
@@ -533,7 +538,7 @@ class _ClassMemory
     ;                   Note: Types must not contain spaces i.e. " UInt" or "UInt " will not work. 
     ;                   When an invalid type is passed the method returns NULL and sets ErrorLevel to -2
     ;       aOffsets* - A variadic list of offsets. When using offsets the address parameter should equal the base address of the pointer.
-    ;                   The address (bass address) and offsets should point to the memory address which is to be written to.
+    ;                   The address (base address) and offsets should point to the memory address which is to be written to.
     ; Return Values:
     ;       Non Zero -  Indicates success.
     ;       Zero     -  Indicates failure. Check errorLevel and A_LastError for more information
@@ -546,7 +551,7 @@ class _ClassMemory
         return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, type "*", value, "Ptr", this.aTypeSize[type], "Ptr", this.pNumberOfBytesWritten) 
     }
 
-    ; Method:   writeRaw(address, byRef buffer, byRef bufferSize := 0, aOffsets*)
+    ; Method:   writeRaw(address, pBuffer, sizeBytes, aOffsets*)
     ;           Writes a buffer to the process.
     ; Parameters:
     ;   address -       The memory address to which the contents of the buffer will be written 
@@ -555,7 +560,7 @@ class _ClassMemory
     ;                   This does not necessarily have to be the beginning of the buffer itself e.g. pBuffer := &buffer + offset
     ;   sizeBytes -     The number of bytes which are to be written from the buffer.
     ;   aOffsets* -     A variadic list of offsets. When using offsets the address parameter should equal the base address of the pointer.
-    ;                   The address (bass address) and offsets should point to the memory address which is to be written to.
+    ;                   The address (base address) and offsets should point to the memory address which is to be written to.
     ; Return Values:
     ;       Non Zero -  Indicates success.
     ;       Zero     -  Indicates failure. Check errorLevel and A_LastError for more information
@@ -883,6 +888,7 @@ class _ClassMemory
     ; is ignored and the function provides the same results as the EnumProcessModules function.
     EnumProcessModulesEx(byRef lphModule, dwFilterFlag := 0x03)
     {
+        lastError := A_LastError
         size := VarSetCapacity(lphModule, 4)
         loop 
         {
@@ -898,6 +904,9 @@ class _ClassMemory
                 break
             else size := VarSetCapacity(lphModule, reqSize)  
         }
+        ; On first loop it fails with A_lastError = 0x299 as its meant to
+        ; might as well reset it to its previous version
+        DllCall("SetLastError", "UInt", lastError)
         return reqSize // A_PtrSize ; module count  ; sizeof(HMODULE) - enumerate the array of HMODULEs     
     }
 
@@ -1050,7 +1059,7 @@ class _ClassMemory
 
     ; Method:               addressPatternScan(startAddress, sizeOfRegionBytes, aAOBPattern*)
     ;                       Scans a specified memory region for an array of bytes pattern.
-    ;                       The memory entire area specified must be readable for this method to work,
+    ;                       The entire memory area specified must be readable for this method to work,
     ;                       i.e. you must ensure the area is readable before calling this method.
     ; Parameters:
     ;   startAddress        The memory address from which to begin the search.
@@ -1070,7 +1079,7 @@ class _ClassMemory
         return this.PatternScan(startAddress, sizeOfRegionBytes, patternMask, AOBBuffer)   
     }
    
-    ; Method:       processPatternScan(aAOBPattern*)
+    ; Method:       processPatternScan(startAddress := 0, endAddress := "", aAOBPattern*)
     ;               Scan the memory space of the current process for an array of bytes pattern. 
     ;               To use this in a loop (scanning for multiple occurrences of the same pattern),
     ;               simply call it again passing the last found address + 1 as the startAddress.
