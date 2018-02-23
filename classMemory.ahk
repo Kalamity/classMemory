@@ -218,7 +218,6 @@ class _ClassMemory
     ;                       ahk_exe, ahk_class, ahk_pid, or simply the window title. e.g. "ahk_exe calc.exe" or "Calculator".
     ;                       It's safer not to use the window title, as some things can have the same window title e.g. an open folder called "Starcraft II"
     ;                       would have the same window title as the game itself.
-    ;                       *Use ahk_pid for console apps which do not have an associated window*
     ;                       *'DetectHiddenWindows, On' is required for hidden windows*
     ;   dwDesiredAccess     The access rights requested when opening the process.
     ;                       If this parameter is null the process will be opened with the following rights
@@ -307,6 +306,21 @@ class _ClassMemory
         WinGet, pid, pid, %program%
         if windowMatchMode
             SetTitleMatchMode, %mode%    ; In case executed in autoexec
+        ; If use 'ahk_exe test.exe' and winget fails, try using the process command.
+        ; This should work for apps without windows.
+
+        if (!pid && RegExMatch(program, "Ai)\s*AHK_EXE\s*(.*)", fileName))
+        {
+            fileName := trim(fileName1) ; extra spaces will make process command fail
+            ; AHK_EXE can be the full path, so just get filename
+            SplitPath, fileName , fileName
+            if (fileName) ; if filename blank, scripts own pid is returned
+            {
+                process, Exist, %fileName%
+                PID := ErrorLevel
+            }
+        }
+
         return pid ? pid : 0 ; PID is null on fail, return 0
     }
     ; Method:   isHandleValid()
@@ -1376,30 +1390,3 @@ class _ClassMemory
 
 
 
-
-/*
-32bit
-Size: 28
-
-BaseAddress         0   |4
-AllocationBase      4   |4
-AllocationProtect   8   |4
-RegionSize          12  |4
-State               16  |4
-Protect             20  |4
-Type                24  |4
-
-64bit
-Size: 48
-
-BaseAddress         0   |8
-AllocationBase      8   |8
-AllocationProtect   16  |4
-__alignment1        20  |4
-RegionSize          24  |8
-State               32  |4
-Protect             36  |4
-Type                40  |4
-__alignment2        44  |4
-
-*/
