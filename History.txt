@@ -4,7 +4,7 @@
 23/02/18 - version 2.9
         -   If openprocess() fails it will always return null. Previously, under certain conditions it could return 0.
         -   Apps without an associated window can now be opened/read using the 'AHK_exe xxx' identifier. 
-            In the past these apps had to use the 'AHK_PID xxx' identifier. 
+            In the past these apps had to use the 'AHK_PID xxx' identifier.
 20/07/17 - version 2.8
         -   Added isHandleValid() method.
             This method provides a means to check if the specific target application instance (which you have been reading from)

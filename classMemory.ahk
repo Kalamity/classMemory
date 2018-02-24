@@ -2,7 +2,7 @@
     A basic memory class by RHCP:
 
     This is a wrapper for commonly used read and write memory functions.
-    It also contains a variety of pattern scan functions. 
+    It also contains a variety of pattern scan functions.
     This class allows scripts to read/write integers and strings of various types. 
     Pointer addresses can easily be read/written by passing the base address and offsets to the various read/write functions.
     
