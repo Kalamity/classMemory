@@ -293,7 +293,7 @@ class _ClassMemory
     {
         ; If user passes an AHK_PID, don't bother searching. There are some very rare cases where searching windows for PIDs 
         ; wont work - console apps
-        if RegExMatch(program, "Ai)\s*AHK_PID\s+(0x[[:xdigit:]]+|\d+)", pid)
+        if RegExMatch(program, "i)\s*AHK_PID\s+(0x[[:xdigit:]]+|\d+)", pid)
             return pid1
         if windowMatchMode
         {
@@ -306,18 +306,20 @@ class _ClassMemory
         WinGet, pid, pid, %program%
         if windowMatchMode
             SetTitleMatchMode, %mode%    ; In case executed in autoexec
+
         ; If use 'ahk_exe test.exe' and winget fails, try using the process command.
         ; This should work for apps without windows.
-
-        if (!pid && RegExMatch(program, "Ai)\s*AHK_EXE\s*(.*)", fileName))
+        if (!pid && RegExMatch(program, "i)\bAHK_EXE\b\s*(.*)", fileName))
         {
-            fileName := trim(fileName1) ; extra spaces will make process command fail
+            ; remove any trailing AHK_XXX arguments
+            filename := RegExReplace(filename1, "i)\bahk_(class|id|pid|group)\b.*", "")
+            filename := trim(filename)    ; extra spaces will make process command fail       
             ; AHK_EXE can be the full path, so just get filename
             SplitPath, fileName , fileName
             if (fileName) ; if filename blank, scripts own pid is returned
             {
                 process, Exist, %fileName%
-                PID := ErrorLevel
+                pid := ErrorLevel
             }
         }
 
