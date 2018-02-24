@@ -286,7 +286,7 @@ class _ClassMemory
 
     version()
     {
-        return 2.9
+        return 2.91
     }   
 
     findPID(program, windowMatchMode := "3")
@@ -364,9 +364,19 @@ class _ClassMemory
 
     openProcess(PID, dwDesiredAccess)
     {
-        ; If fails with 0x5 ERROR_ACCESS_DENIED (when setSeDebugPrivilege() is req.), the func. returns 0 rather than null. Set it to null.
-        ; If fails for another reason, then it is usually null.
-        return (r := DllCall("OpenProcess", "UInt", dwDesiredAccess, "Int", False, "UInt", PID, "Ptr")) ? r : ""
+        r := DllCall("OpenProcess", "UInt", dwDesiredAccess, "Int", False, "UInt", PID, "Ptr")
+        ; if it fails with 0x5 ERROR_ACCESS_DENIED, try enabling privilege ... lots of users never try this.
+        ; there may be other errors which also require DebugPrivilege....
+        if (!r && A_LastError = 5)
+        {
+            this.setSeDebugPrivilege(true) ; no harm in enabling it if it is already enabled by user
+            if (r2 := DllCall("OpenProcess", "UInt", dwDesiredAccess, "Int", False, "UInt", PID, "Ptr"))
+                return r2
+            DllCall("SetLastError", "UInt", 5) ; restore original error if it doesnt work
+        }
+        ; If fails with 0x5 ERROR_ACCESS_DENIED (when setSeDebugPrivilege() is req.), the func. returns 0 rather than null!! Set it to null.
+        ; If fails for another reason, then it is null.
+        return r ? r : ""
     }   
 
     ; Method:   closeHandle(hProcess)

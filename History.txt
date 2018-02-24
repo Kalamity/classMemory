@@ -1,3 +1,6 @@
+24/02/18 - version 2.91
+        -   If openprocess() fails due to ERROR_ACCESS_DENIED, setSeDebugPrivilege() will be automatically enabled and another attempt will be
+            made to open a handle. Note: There may still be cases where users will need to manually call _ClassMemory.setSeDebugPrivilege().
 23/02/18 - version 2.9
         -   If openprocess() fails it will always return null. Previously, under certain conditions it could return 0.
         -   Apps without an associated window can now be opened/read using the 'AHK_exe xxx' identifier. 
