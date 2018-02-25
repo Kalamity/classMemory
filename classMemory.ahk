@@ -121,7 +121,7 @@
             {
                 msgbox failed to open a handle
                 if (hProcessCopy = 0)
-                    msgbox The program isn't running (not found) or you passed an incorrect program identifier parameter. 
+                    msgbox The program isn't running (not found) or you passed an incorrect program identifier parameter. In some cases _ClassMemory.setSeDebugPrivilege() may be required. 
                 else if (hProcessCopy = "")
                     msgbox OpenProcess failed. If the target process has admin rights, then the script also needs to be ran as admin. _ClassMemory.setSeDebugPrivilege() may also be required. Consult A_LastError for more information.
                 ExitApp
@@ -228,7 +228,8 @@ class _ClassMemory
     ;                       Values:
     ;                           Null    OpenProcess failed. The script may need to be run with admin rights admin, 
     ;                                   and/or with the use of _ClassMemory.setSeDebugPrivilege(). Consult A_LastError for more information.
-    ;                           0       The program isn't running (not found) or you passed an incorrect program identifier parameter. 
+    ;                           0       The program isn't running (not found) or you passed an incorrect program identifier parameter.
+    ;                                   In some cases _ClassMemory.setSeDebugPrivilege() may be required.
     ;                           Positive Integer    A handle to the process. (Success)
     ;   windowMatchMode -   Determines the matching mode used when finding the program (windowTitle).
     ;                       The default value is 3 i.e. an exact match. Refer to AHK's setTitleMathMode for more information.
@@ -291,7 +292,7 @@ class _ClassMemory
 
     findPID(program, windowMatchMode := "3")
     {
-        ; If user passes an AHK_PID, don't bother searching. There are some very rare cases where searching windows for PIDs 
+        ; If user passes an AHK_PID, don't bother searching. There are cases where searching windows for PIDs 
         ; wont work - console apps
         if RegExMatch(program, "i)\s*AHK_PID\s+(0x[[:xdigit:]]+|\d+)", pid)
             return pid1
@@ -307,8 +308,9 @@ class _ClassMemory
         if windowMatchMode
             SetTitleMatchMode, %mode%    ; In case executed in autoexec
 
-        ; If use 'ahk_exe test.exe' and winget fails, try using the process command.
-        ; This should work for apps without windows.
+        ; If use 'ahk_exe test.exe' and winget fails (which can happen when setSeDebugPrivilege is required),
+        ; try using the process command. When it fails due to setSeDebugPrivilege, setSeDebugPrivilege will still be required to openProcess
+        ; This should also work for apps without windows.
         if (!pid && RegExMatch(program, "i)\bAHK_EXE\b\s*(.*)", fileName))
         {
             ; remove any trailing AHK_XXX arguments
