@@ -48,6 +48,7 @@
         readRaw()
         write()
         writeString()
+        writeBytes()
         writeRaw()
         isHandleValid() 
         getModuleBaseAddress()
@@ -287,7 +288,7 @@ class _ClassMemory
 
     version()
     {
-        return 2.91
+        return 2.92
     }   
 
     findPID(program, windowMatchMode := "3")
@@ -596,6 +597,40 @@ class _ClassMemory
     writeRaw(address, pBuffer, sizeBytes, aOffsets*)
     {
         return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", pBuffer, "Ptr", sizeBytes, "Ptr", this.pNumberOfBytesWritten) 
+    }
+
+    ; Method:   writeBytes(address, hexStringOrByteArray, aOffsets*)
+    ;           Writes a sequence of byte values to the process.
+    ; Parameters:
+    ;   address -       The memory address to where the bytes will be written 
+    ;                   or if using the offset parameter, the base address of the pointer.    
+    ;   hexStringOrByteArray -  This can either be either a string (A) or an object/array (B) containing the values to be written.
+    ;              
+    ;               A) HexString -      A string of hex bytes.  The '0x' hex prefix is optional.
+    ;                                   Bytes can optionally be separated using the space or tab characters.
+    ;                                   Each byte must be two characters in length i.e. '04' or '0x04' (not '4' or '0x4') 
+    ;               B) Object/Array -   An array containing hex or decimal byte values e.g. array := [10, 29, 0xA]
+    ;
+    ;   aOffsets* -     A variadic list of offsets. When using offsets the address parameter should equal the base address of the pointer.
+    ;                   The address (base address) and offsets should point to the memory address which is to be written to.
+    ; Return Values:
+    ;       -1, -2, -3, -4  - Error with the hexstring. Refer to hexStringToPattern() for details.
+    ;       Other Non Zero  - Indicates success.
+    ;       Zero            - Indicates write failure. Check errorLevel and A_LastError for more information
+    ;
+    ;   Examples:
+    ;                   writeBytes(0xAABBCC11, "DEADBEEF")          ; Writes the bytes DE AD BE EF starting at address  0xAABBCC11
+    ;                   writeBytes(0xAABBCC11, [10, 20, 0xA, 2])
+
+    writeBytes(address, hexStringOrByteArray, aOffsets*)
+    {
+        if !IsObject(hexStringOrByteArray)
+        {
+            if !IsObject(hexStringOrByteArray := this.hexStringToPattern(hexStringOrByteArray))
+                return hexStringOrByteArray
+        }
+        sizeBytes := this.getNeedleFromAOBPattern("", buffer, hexStringOrByteArray*)
+        return this.writeRaw(address, &buffer, sizeBytes, aOffsets*)
     }
 
     ; Method:           pointer(address, finalType := "UInt", offsets*)

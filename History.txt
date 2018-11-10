@@ -1,3 +1,6 @@
+11/11/18 - version 2.92
+        -   Added writeBytes(address, hexStringOrByteArray, aOffsets*) method.
+            This writes a sequence of byte values to the process.
 24/02/18 - version 2.91
         -   If openprocess() fails due to ERROR_ACCESS_DENIED, setSeDebugPrivilege() will be automatically enabled and another attempt will be
             made to open a handle. Note: There may still be cases where users will need to manually call _ClassMemory.setSeDebugPrivilege().
