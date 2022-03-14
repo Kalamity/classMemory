@@ -1,4 +1,4 @@
-﻿/*
+/*
     A basic memory class by RHCP:
 
     This is a wrapper for commonly used read and write memory functions.
@@ -52,9 +52,14 @@
         writeRaw()
         isHandleValid() 
         getModuleBaseAddress()
+        GetDllBaseAddress()
+        VirtualAllocEx()
+        VirtualFreeEx()
+        CreateRemoteThread()
 
     Less commonly used methods:
         getProcessBaseAddress()
+        
         hexStringToPattern()
         stringToPattern()    
         modulePatternScan()
@@ -286,12 +291,40 @@ class _ClassMemory
         return
     }
 
+    ; Method: CreateRemoteThread(pRemoteAddress)
+    ; parameters:
+    ;   pRemoteAddress - The address of the function to be executed.
+
+    CreateRemoteThread(pRemoteAddress)
+    {
+        return DllCall("CreateRemoteThread", "Ptr", this.hProcess, "Ptr", 0, "Ptr", 0, "Ptr", pRemoteAddress, "Ptr", 0, "Ptr", 0, "Ptr", 0)
+    }
+    
+    ; Method: VirtualAllocEx(pSize)
+    ; parameters:
+    ;   pSize    The size of the memory allocation.
+
+    VirtualAllocEx(pSize)
+    {
+        return DllCall("VirtualAllocEx", "Ptr", this.hProcess, "Ptr", 0, "Ptr", pSize, "Ptr", 0x1000, "Ptr", 0x40)
+    }
+
+    ; Method:    VirtualFreeEx(pAddress, pSize)
+    ; parameters:
+    ;   pAddress    The address of the memory to be freed.
+    ;   pSize       The size of the memory to be freed.
+
+    VirtualFreeEx(pAddress, pSize)
+    {
+        return DllCall("VirtualFreeEx", "Ptr", this.hProcess, "Ptr", pAddress, "Ptr", pSize, "Ptr", 0x4000)
+    }
+
     version()
     {
         return 2.92
     }   
 
-    findPID(program, windowMatchMode := "3")
+    findPID(program, windowMatchMode := "3", num := -1)
     {
         ; If user passes an AHK_PID, don't bother searching. There are cases where searching windows for PIDs 
         ; wont work - console apps
@@ -321,8 +354,32 @@ class _ClassMemory
             SplitPath, fileName , fileName
             if (fileName) ; if filename blank, scripts own pid is returned
             {
-                process, Exist, %fileName%
-                pid := ErrorLevel
+                arid:=[]
+                len:=0
+                s := VarSetCapacity(a, 4096)  ; An array that receives the list of process identifiers:
+                DllCall("Psapi.dllEnumProcesses", "Ptr", &a, "UInt", s, "UIntP", r)
+                Loop, % r // 4  ; Parse array for identifiers as DWORDs (32 bits):
+                {
+                   id := NumGet(a, A_Index * 4, "UInt")
+                   if h := DllCall("OpenProcess", "UInt", 0x0410, "Int", false, "UInt", id, "Ptr")
+                   {
+                      VarSetCapacity(name, s, 0)  ; a buffer that receives the base name of the module:
+                      DllCall("Psapi.dllGetModuleBaseName", "Ptr", h, "Ptr", 0, "Str", name, "UInt", A_IsUnicode ? s//2 : s)
+                      DllCall("CloseHandle", "Ptr", h)  ; close process handle to save memory
+                      if (name=fileName){
+                        hProc := DllCall("OpenProcess", "Ptr", 0x400, "Ptr", 0, "Ptr", id)
+                        DllCall("kernel32GetProcessTimes", "Ptr",hProc, "Int64*",vIntervalsUTC, "Ptr",0, "Ptr",0, "Ptr",0)
+                        DllCall("CloseHandle", "Ptr", hProc)  ; close process handle to save memory
+                        arid[vIntervalsUTC]:=id
+                        len+=1
+                    }
+                   }
+                }
+                DllCall("FreeLibrary", "Ptr", hModule)  ; Unload the library to free memory.
+                c := (num < 0? len + mod(num, len) : mod(num - 1, len)) + 1
+                for k, v in arid
+                    if (A_Index = c)
+                        return v
             }
         }
 
@@ -553,8 +610,10 @@ class _ClassMemory
         encodingSize := (encoding = "utf-16" || encoding = "cp1200") ? 2 : 1
         requiredSize := StrPut(string, encoding) * encodingSize - (this.insertNullTerminator ? 0 : encodingSize)
         VarSetCapacity(buffer, requiredSize)
-        StrPut(string, &buffer, StrLen(string) + (this.insertNullTerminator ?  1 : 0), encoding)
-        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", &buffer, "Ptr", requiredSize, "Ptr", this.pNumberOfBytesWritten)
+        ;~ StrPut(string, &buffer, StrLen(string) + (this.insertNullTerminator ?  1 : 0), encoding)
+        StrPut(string, &buffer, encoding)
+        if DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", &buffer, "Ptr", requiredSize, "Ptr", this.pNumberOfBytesWritten)
+        return address + requiredSize
     }
     
     ; Method:   write(address, value, type := "Uint", aOffsets*)
@@ -576,8 +635,10 @@ class _ClassMemory
     write(address, value, type := "Uint", aOffsets*)
     {
         if !this.aTypeSize.hasKey(type)
-            return "", ErrorLevel := -2 
-        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, type "*", value, "Ptr", this.aTypeSize[type], "Ptr", this.pNumberOfBytesWritten) 
+            return "", ErrorLevel := -2
+        sizeBytes := this.aTypeSize[type]
+        if DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, type "*", value, "Ptr", sizeBytes, "Ptr", this.pNumberOfBytesWritten) 
+        return address + sizeBytes
     }
 
     ; Method:   writeRaw(address, pBuffer, sizeBytes, aOffsets*)
@@ -596,7 +657,8 @@ class _ClassMemory
 
     writeRaw(address, pBuffer, sizeBytes, aOffsets*)
     {
-        return DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", pBuffer, "Ptr", sizeBytes, "Ptr", this.pNumberOfBytesWritten) 
+        if DllCall("WriteProcessMemory", "Ptr", this.hProcess, "Ptr", aOffsets.maxIndex() ? this.getAddressFromOffsets(address, aOffsets*) : address, "Ptr", pBuffer, "Ptr", sizeBytes, "Ptr", this.pNumberOfBytesWritten)
+        return address + sizeBytes
     }
 
     ; Method:   writeBytes(address, hexStringOrByteArray, aOffsets*)
@@ -748,7 +810,21 @@ class _ClassMemory
     ; Notes:    A 64 bit AHK can enumerate the modules of a target 64 or 32 bit process.
     ;           A 32 bit AHK can only enumerate the modules of a 32 bit process
     ;           This method requires PROCESS_QUERY_INFORMATION + PROCESS_VM_READ access rights. These are included by default with this class.
-
+    GetDllBaseAddress(moduleName)
+    {
+        hS := DllCall("CreateToolhelp32Snapshot", "UInt", 0x18, "UInt", this.PID)
+        NumPut(VarSetCapacity(me, (A_PtrSize = 8 ? 568 : 548), 0), me, "UInt")
+        ModuleAdd:=DllCall("Module32First", "ptr", hS, "ptr", &me)
+        while (ModuleAdd)
+        {
+            if (ModuleName = StrGet(&me+ (A_PtrSize = 8 ? 48 : 32), 256, "cp0"))
+            {
+                DllCall("CloseHandle", "ptr", hS)
+                return NumGet(me, (A_PtrSize = 8 ? 24 : 20), "uptr")
+            }
+            ModuleAdd:=DllCall("Module32Next", "ptr", hS, "ptr", &me)
+        }
+    }
     getModuleBaseAddress(moduleName := "", byRef aModuleInfo := "")
     {
         aModuleInfo := ""
